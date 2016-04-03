@@ -1,4 +1,4 @@
-import time
+import logging
 import socket
 import select
 
@@ -6,6 +6,8 @@ import select
 socket.setdefaulttimeout(0)
 
 PORT = 8000
+
+logging.basicConfig(level=logging.INFO)
 
 
 def main():
@@ -31,7 +33,7 @@ def main():
             # if it times out dont care, just select from the list of known connections
             pass
         else:
-            print('New connection:', conn.getpeername())
+            logging.info('New connection: %s', conn.getpeername())
             read_list.add(conn)
             socket_data[conn] = b''
 
@@ -41,28 +43,10 @@ def main():
 
         # dont care about errors
         readables, writeables, errorables = select.select(list(read_list), list(write_list), [], 0)
-        print('read', [x.getpeername() for x in readables])
-        print('write', [x.getpeername() for x in writeables])
-
-        for readable in readables:
-            try:
-                inbound_data = readable.recv(4096)
-                socket_data[readable] += inbound_data
-                print('received', inbound_data, 'from', readable.getpeername())
-
-                # sockets are readable but non-blocking return 0, adapted from
-                # http://stackoverflow.com/a/5640189/2075437
-                if len(inbound_data) == 0:
-                    raise ConnectionError('Socket closed')
-            except ConnectionError:
-                print('Remote socket closed:', readable.getpeername())
-                read_list.remove(readable)
-                del socket_data[readable]
-                readable.close()
-            else:
-                # if there's at least one
-                if b'\n' in socket_data[readable]:
-                    write_list.add(readable)
+        if readables:
+            logging.debug('read %s', [x.getpeername() for x in readables])
+        if writeables:
+            logging.debug('write %s', [x.getpeername() for x in writeables])
 
         for writeable in writeables:
             received_data = socket_data[writeable]
@@ -72,9 +56,30 @@ def main():
             data_to_send = received_data[:last_lf]
             # the last element of the array will be incomplete (or empty bytestr which is fine too)
             socket_data[writeable] = received_data[last_lf:]
-            print('Sending', data_to_send, 'to', writeable.getpeername())
+            logging.info('Sending %s to %s', data_to_send, writeable.getpeername())
             writeable.sendall(data_to_send)
             write_list.remove(writeable)
+
+        for readable in readables:
+            try:
+                inbound_data = readable.recv(4096)
+                socket_data[readable] += inbound_data
+                logging.debug('Received %s from %s', inbound_data, readable.getpeername())
+
+                # sockets are readable but non-blocking return 0, adapted from
+                # http://stackoverflow.com/a/5640189/2075437
+                if len(inbound_data) == 0:
+                    raise ConnectionError('Socket closed')
+            except ConnectionError:
+                logging.info('Remote socket closed: %s', readable.getpeername())
+                read_list.remove(readable)
+                del socket_data[readable]
+                readable.close()
+            else:
+                # if there's at least one
+                if b'\n' in socket_data[readable]:
+                    write_list.add(readable)
+
 
 
 if __name__ == '__main__':
