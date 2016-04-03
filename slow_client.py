@@ -11,4 +11,5 @@ server_socket.connect(('127.0.0.1', 8000))
 for c in b'hello\n':
     time.sleep(1)
     server_socket.sendall(bytes([c]))
+print(server_socket.recv(4096))
 server_socket.close()

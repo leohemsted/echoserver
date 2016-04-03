@@ -31,7 +31,7 @@ class EchoServer:
             try:
                 conn, address = self.listen_socket.accept()
             except BlockingIOError:
-                # if it times out dont care, just select from the list of known connections
+                # if there's nothing to accept dont care, cos existing connections might still have data
                 pass
             else:
                 logging.info('New connection: %s', conn.getpeername())
@@ -42,44 +42,48 @@ class EchoServer:
             if not self.read_list and not self.write_list:
                 continue
 
-            # dont care about errors
             readables, writeables, errorables = select.select(list(self.read_list), list(self.write_list), [], 0)
+
             if readables:
                 logging.debug('read %s', [x.getpeername() for x in readables])
             if writeables:
                 logging.debug('write %s', [x.getpeername() for x in writeables])
 
             for writeable in writeables:
-                received_data = self.socket_data[writeable]
-
-                # slice received_data at the rightmost line feed - send everything before it
-                last_lf = received_data.rfind(b'\n') + 1
-                data_to_send = received_data[:last_lf]
-                # the last element of the array will be incomplete (or empty bytestr which is fine too)
-                self.socket_data[writeable] = received_data[last_lf:]
-                logging.info('Sending %s to %s', data_to_send, writeable.getpeername())
-                writeable.sendall(data_to_send)
-                self.write_list.remove(writeable)
+                self.write_data(writeable)
 
             for readable in readables:
-                try:
-                    inbound_data = readable.recv(4096)
-                    self.socket_data[readable] += inbound_data
-                    logging.debug('Received %s from %s', inbound_data, readable.getpeername())
+                self.read_data(readable)
 
-                    # sockets are readable but non-blocking return 0, adapted from
-                    # http://stackoverflow.com/a/5640189/2075437
-                    if len(inbound_data) == 0:
-                        raise ConnectionError('Socket closed')
-                except ConnectionError:
-                    logging.info('Remote socket closed: %s', readable.getpeername())
-                    self.read_list.remove(readable)
-                    del self.socket_data[readable]
-                    readable.close()
-                else:
-                    # if there's at least one
-                    if b'\n' in self.socket_data[readable]:
-                        self.write_list.add(readable)
+    def write_data(self, writeable):
+        received_data = self.socket_data[writeable]
+
+        # slice received_data at the rightmost line feed - send everything before it
+        last_lf = received_data.rfind(b'\n') + 1
+        data_to_send = received_data[:last_lf]
+        # the last element of the array will be incomplete (or empty bytestr which is fine too)
+        self.socket_data[writeable] = received_data[last_lf:]
+        logging.info('Sending %s to %s', data_to_send, writeable.getpeername())
+        writeable.sendall(data_to_send)
+        self.write_list.remove(writeable)
+
+    def read_data(self, readable):
+        try:
+            inbound_data = readable.recv(4096)
+            # sockets are readable but non-blocking return 0, see http://stackoverflow.com/a/5640189/2075437
+            if len(inbound_data) == 0:
+                raise ConnectionError('Socket closed')
+        except ConnectionError:
+            logging.info('Remote socket closed: %s', readable.getpeername())
+            self.read_list.remove(readable)
+            del self.socket_data[readable]
+            readable.close()
+        else:
+            self.socket_data[readable] += inbound_data
+            logging.debug('Received %s from %s', inbound_data, readable.getpeername())
+            # if there's at least one
+            if b'\n' in self.socket_data[readable]:
+                self.write_list.add(readable)
 
 
 if __name__ == '__main__':

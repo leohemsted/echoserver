@@ -13,5 +13,5 @@ time.sleep(2)
 server_socket.sendall(b'ld\n')
 # make sure server has processed
 time.sleep(1)
-print('Received', server_socket.recv(4096))
+print(server_socket.recv(4096))
 server_socket.close()
