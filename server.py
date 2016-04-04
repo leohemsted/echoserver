@@ -1,3 +1,4 @@
+import sys
 import logging
 import socket
 import select
@@ -87,4 +88,4 @@ class EchoServer:
 
 
 if __name__ == '__main__':
-    EchoServer(port=8000).run()
+    EchoServer(port=int(sys.argv[1])).run()
